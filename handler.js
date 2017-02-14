@@ -28,31 +28,13 @@ module.exports.PullBusData = (event, context, callback) => {
       } else {
           var allObjects = JSON.parse(body);
           if (allObjects.length > 0) {
-              updateUpdatedTime();
+              updateUpdatedTime(allObjects, response, callback);
+          } else {
+              response.statusCode = 500;
+              response.body = "empty Source.";
+              callback(null, response);
           }
-          for (var i = 0; i < allObjects.length; i++) {
-              var params = {
-                  TableName: tableName,
-                  Item: {
-                      "ID": allObjects[i].id,
-                      "Timestamp": Date.now(),
-                      "Route":  allObjects[i].route,
-                      "Latitude":  allObjects[i].lat,
-                      "Longitude":  allObjects[i].lng,
-                      "Logo":  allObjects[i].logo,
-                  }
-              };
-              docClient.put(params, function(err, data) {
-                  if (err) {
-                      console.error("Unable to add item. Error JSON:", JSON.stringify(err, null, 2));
-                  } else {
-                      console.log("Added item:", JSON.stringify(data, null, 2));
-                  }
-              });
-          }
-          response.body = "Adding all objects";
       }
-      callback(null, response);
   });
 };
 
@@ -114,14 +96,12 @@ function getAllBusesTime(lastUpdatedTime, response, callback) {
     var params = {
         TableName: tableName,
         ProjectionExpression: "#pk, #sk, Latitude, Longitude, Route, Logo",
-        FilterExpression: "#pk between :start_pk and :end_pk and #sk >= :sk_time",
+        FilterExpression: "#sk >= :sk_time",
         ExpressionAttributeNames: {
             "#pk": "ID",
             "#sk": "Timestamp"
         },
         ExpressionAttributeValues: {
-            ":start_pk": 1706,
-            ":end_pk": 2772,
             ":sk_time": lastUpdatedTime
         }
     };
@@ -149,35 +129,8 @@ function getAllBusesTime(lastUpdatedTime, response, callback) {
         }
     });
 }
-function getAllBusesTime2(lastUpdatedTime, response, callback) {
-    var params = {
-        TableName : tableName,
-        KeyConditionExpression: "#pk = :pkValue AND #sk >= :skValue",
-        ExpressionAttributeNames:{
-            "#pk": "ID",
-            "#sk": "Timestamp"
-        },
-        ExpressionAttributeValues: {
-            ":pkValue": 1706,
-            ":skValue": lastUpdatedTime
-        }
-    };
-    docClient.query(params, function(err, data) {
-        if (err) {
-            console.error("Unable to query. Error:", JSON.stringify(err, null, 2));
-            response.statusCode = 500;
-            response.body = JSON.stringify(err, null, 2);
-            callback(null, response);
 
-        } else {
-            console.log("Query succeeded.");
-            response.body = JSON.stringify(data, null, 2);
-            callback(null, response);
-        }
-    });
-}
-
-function updateUpdatedTime() {
+function updateUpdatedTime(allObjects, response, callback) {
     var params = {
         TableName: updatedTimeTableName,
         Key: {
@@ -192,8 +145,37 @@ function updateUpdatedTime() {
     docClient.update(params, function(err, data) {
         if (err) {
             console.error("Unable to update item. Error JSON:", JSON.stringify(err, null, 2));
+            response.statusCode = 500;
+            response.body = JSON.stringify(err, null, 2);
+            callback(null, response);
         } else {
             console.log("UpdateItem succeeded:", JSON.stringify(data, null, 2));
+            insertingElements(allObjects, response, callback);
         }
     });
+}
+
+function insertingElements(allObjects, response, callback) {
+    for (var i = 0; i < allObjects.length; i++) {
+        var params = {
+            TableName: tableName,
+            Item: {
+                "ID": allObjects[i].id,
+                "Timestamp": Date.now(),
+                "Route":  allObjects[i].route,
+                "Latitude":  allObjects[i].lat,
+                "Longitude":  allObjects[i].lng,
+                "Logo":  allObjects[i].logo,
+            }
+        };
+        docClient.put(params, function(err, data) {
+            if (err) {
+                console.error("Unable to add item. Error JSON:", JSON.stringify(err, null, 2));
+            } else {
+                console.log("Added item:", JSON.stringify(data, null, 2));
+            }
+        });
+    }
+    response.body = "Adding all objects";
+    callback(null, response);
 }
